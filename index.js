@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRow } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRow, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
@@ -11,12 +11,7 @@ const BOT_DESC = "بوت النقاط";
 // ===== البيئة =====
 const TOKEN = process.env.TOKEN;
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
-const MIN_POINTS = parseInt(process.env.MIN_POINTS) || 10;
 const OWNER_ID = process.env.OWNER_ID;
-
-// إعداد النقاط التلقائية
-const MESSAGE_THRESHOLD = data.settings.messagesThreshold || 5;
-const POINTS_PER_THRESHOLD = data.settings.pointsPerThreshold || 5;
 
 function saveData() {
     fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
@@ -36,15 +31,28 @@ client.on('messageCreate', async message => {
     if (!data.users[userId]) data.users[userId] = { points: 0, messageCount: 0 };
 
     data.users[userId].messageCount++;
-    if (data.users[userId].messageCount >= MESSAGE_THRESHOLD) {
-        data.users[userId].points += POINTS_PER_THRESHOLD;
+    if (data.users[userId].messageCount >= data.settings.messagesThreshold) {
+        data.users[userId].points += data.settings.pointsPerThreshold;
         data.users[userId].messageCount = 0;
         saveData();
 
         const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
-        if(logChannel) logChannel.send(
-            `عضو: <@${userId}>\nيوزره: ${message.author.username}\nنقاطه الحالية: ${data.users[userId].points}\nالنقاط المكتسبة: ${POINTS_PER_THRESHOLD}`
-        );
+        if(logChannel){
+            const embed = new EmbedBuilder()
+                .setColor('#00FF00')
+                .setTitle('تم إضافة نقاط!')
+                .setThumbnail(message.guild.iconURL())
+                .addFields(
+                    {name:'العضو', value:`<@${userId}>`, inline:true},
+                    {name:'يوزره', value: `${message.author.username}`, inline:true},
+                    {name:'النقاط المكتسبة', value:`${data.settings.pointsPerThreshold}`, inline:true},
+                    {name:'إجمالي النقاط', value:`${data.users[userId].points}`, inline:true}
+                )
+                .setFooter({text: BOT_NAME, iconURL: client.user.avatarURL()})
+                .setTimestamp();
+
+            logChannel.send({embeds:[embed]});
+        }
     }
 });
 
@@ -59,7 +67,7 @@ client.on('interactionCreate', async interaction => {
 
     // ===== /menu =====
     if (interaction.isChatInputCommand() && interaction.commandName === 'menu') {
-        if (!isOwner && !isAdmin) { // للأعضاء العاديين فقط تظهر خياراتهم
+        if (!isOwner && !isAdmin) { // الأعضاء العاديين
             const menu = new StringSelectMenuBuilder()
                 .setCustomId('menu_select')
                 .setPlaceholder('اختر خيار من القائمة')
@@ -81,8 +89,8 @@ client.on('interactionCreate', async interaction => {
             .setCustomId('menu_select')
             .setPlaceholder('اختر خيار من القائمة')
             .addOptions([
-                { label: 'إضافة نقاط', value: 'add_points' },
-                { label: 'إضافة عدد رسائل', value: 'add_msgs' },
+                { label: 'تغيير النقاط لكل X رسائل', value: 'add_points' },
+                { label: 'تغيير عدد الرسائل المطلوب', value: 'add_msgs' },
                 { label: 'تغيير الحد الأدنى للتحويل', value: 'change_min' },
                 { label: 'عرض الأعضاء والنقاط', value: 'view_users' },
                 { label: 'تصفير النقاط', value: 'reset_points' },
@@ -98,7 +106,7 @@ client.on('interactionCreate', async interaction => {
         const option = interaction.values[0];
         const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
 
-        // ===== خيارات الأعضاء/الإداريين =====
+        // خيارات الأعضاء/الإداريين
         if (!isOwner) {
             switch(option) {
                 case 'my_points':
@@ -117,8 +125,8 @@ client.on('interactionCreate', async interaction => {
                         await interaction.reply({ content: 'يجب أن تكون إداري لتحويل النقاط للترقية', ephemeral:true });
                         return;
                     }
-                    if (data.users[userId].points < MIN_POINTS) {
-                        await interaction.reply({ content: `الحد الأدنى للتحويل: ${MIN_POINTS} نقاط`, ephemeral:true });
+                    if (data.users[userId].points < data.settings.minPointsToConvert) {
+                        await interaction.reply({ content: `الحد الأدنى للتحويل: ${data.settings.minPointsToConvert} نقاط`, ephemeral:true });
                     } else {
                         data.upgradeRequests[userId] = data.users[userId].points;
                         const pts = data.users[userId].points;
@@ -129,8 +137,8 @@ client.on('interactionCreate', async interaction => {
                     }
                     break;
                 case 'convert_credit':
-                    if (data.users[userId].points < MIN_POINTS) {
-                        await interaction.reply({ content: `الحد الأدنى للتحويل: ${MIN_POINTS} نقاط`, ephemeral:true });
+                    if (data.users[userId].points < data.settings.minPointsToConvert) {
+                        await interaction.reply({ content: `الحد الأدنى للتحويل: ${data.settings.minPointsToConvert} نقاط`, ephemeral:true });
                     } else {
                         data.creditRequests[userId] = data.users[userId].points;
                         const pts = data.users[userId].points;
@@ -145,37 +153,28 @@ client.on('interactionCreate', async interaction => {
         }
 
         // ===== خيارات المالك =====
-        if (!isOwner) return; // غير المالك لا يستطيع الوصول هنا
+        if (!isOwner) return;
 
         switch(option) {
             case 'add_points':
-                const modal = new ModalBuilder()
-                    .setCustomId('modal_add_points')
-                    .setTitle('إضافة نقاط');
-
-                const inputUser = new TextInputBuilder()
-                    .setCustomId('target_user')
-                    .setLabel('ايدي العضو أو منشن')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true);
-
-                const inputPoints = new TextInputBuilder()
-                    .setCustomId('points_amount')
-                    .setLabel('عدد النقاط')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true);
-
-                modal.addComponents(new ActionRow().addComponents(inputUser));
-                modal.addComponents(new ActionRow().addComponents(inputPoints));
-                await interaction.showModal(modal);
-                break;
-
             case 'add_msgs':
-                await interaction.reply({ content: `خاصية إضافة الرسائل جاهزة مسبقاً لكل ${MESSAGE_THRESHOLD} رسائل يعطي ${POINTS_PER_THRESHOLD} نقاط`, ephemeral:true });
-                break;
-
             case 'change_min':
-                await interaction.reply({ content: `لتغيير الحد الأدنى للتحويل، عدل قيمة MIN_POINTS في Environment Variables على Railway` , ephemeral:true });
+                // سنفتح مودال ديناميكي حسب الخيار
+                let modal, inputField;
+                if(option==='add_points'){
+                    modal = new ModalBuilder().setCustomId('modal_change_points').setTitle('تغيير النقاط لكل X رسائل');
+                    inputField = new TextInputBuilder().setCustomId('new_points').setLabel(`النقاط الحالية: ${data.settings.pointsPerThreshold}`).setStyle(TextInputStyle.Short).setRequired(true);
+                }
+                if(option==='add_msgs'){
+                    modal = new ModalBuilder().setCustomId('modal_change_messages').setTitle('تغيير عدد الرسائل المطلوب');
+                    inputField = new TextInputBuilder().setCustomId('new_messages').setLabel(`العدد الحالي: ${data.settings.messagesThreshold}`).setStyle(TextInputStyle.Short).setRequired(true);
+                }
+                if(option==='change_min'){
+                    modal = new ModalBuilder().setCustomId('modal_change_min').setTitle('تغيير الحد الأدنى للتحويل');
+                    inputField = new TextInputBuilder().setCustomId('new_min').setLabel(`الحد الأدنى الحالي: ${data.settings.minPointsToConvert}`).setStyle(TextInputStyle.Short).setRequired(true);
+                }
+                modal.addComponents(new ActionRow().addComponents(inputField));
+                await interaction.showModal(modal);
                 break;
 
             case 'view_users':
@@ -187,7 +186,7 @@ client.on('interactionCreate', async interaction => {
                 break;
 
             case 'reset_points':
-                Object.values(data.users).forEach(u => u.points=0);
+                Object.values(data.users).forEach(u=>u.points=0);
                 saveData();
                 if(logChannel) logChannel.send(`تم تصفير نقاط جميع الأعضاء بواسطة ${interaction.user.tag}`);
                 await interaction.reply({ content:'تم تصفير نقاط جميع الأعضاء!', ephemeral:true });
@@ -205,25 +204,26 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // ===== مودال إضافة النقاط للمالك =====
-    if(interaction.isModalSubmit() && interaction.customId==='modal_add_points'){
-        if(!isOwner) return interaction.reply({content:'هذا الخيار محجوز لمالك السيرفر فقط.', ephemeral:true});
-
-        const target = interaction.fields.getTextInputValue('target_user');
-        const points = parseInt(interaction.fields.getTextInputValue('points_amount'));
-        if(isNaN(points)) return interaction.reply({content:'الرجاء إدخال رقم صحيح للنقاط!', ephemeral:true});
-
-        let targetId;
-        if(target.match(/^<@!?(\d+)>$/)) targetId = target.replace(/\D/g,'');
-        else targetId = target;
-
-        if(!data.users[targetId]) data.users[targetId]={points:0,messageCount:0};
-        data.users[targetId].points += points;
-        saveData();
-
-        await interaction.reply({content:`تم إعطاء <@${targetId}> ${points} نقاط!`, ephemeral:true});
-        const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
-        if(logChannel) logChannel.send(`<@${targetId}> حصل على ${points} نقاط بواسطة ${interaction.user.tag}. مجموع نقاطه: ${data.users[targetId].points}`);
+    // ===== التعامل مع المودالات =====
+    if(interaction.isModalSubmit()){
+        if(interaction.customId==='modal_change_points'){
+            const newPoints = parseInt(interaction.fields.getTextInputValue('new_points'));
+            if(isNaN(newPoints)||newPoints<=0) return interaction.reply({content:'أدخل قيمة صحيحة أكبر من 0', ephemeral:true});
+            data.settings.pointsPerThreshold = newPoints; saveData();
+            return interaction.reply({content:`تم تحديث النقاط لكل X رسائل إلى ${newPoints}`, ephemeral:true});
+        }
+        if(interaction.customId==='modal_change_messages'){
+            const newMsgs = parseInt(interaction.fields.getTextInputValue('new_messages'));
+            if(isNaN(newMsgs)||newMsgs<=0) return interaction.reply({content:'أدخل عدد صحيح أكبر من 0', ephemeral:true});
+            data.settings.messagesThreshold = newMsgs; saveData();
+            return interaction.reply({content:`تم تحديث عدد الرسائل المطلوبة إلى ${newMsgs}`, ephemeral:true});
+        }
+        if(interaction.customId==='modal_change_min'){
+            const newMin = parseInt(interaction.fields.getTextInputValue('new_min'));
+            if(isNaN(newMin)||newMin<=0) return interaction.reply({content:'أدخل قيمة صحيحة أكبر من 0', ephemeral:true});
+            data.settings.minPointsToConvert = newMin; saveData();
+            return interaction.reply({content:`تم تحديث الحد الأدنى للتحويل إلى ${newMin}`, ephemeral:true});
+        }
     }
 
 });

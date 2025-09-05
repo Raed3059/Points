@@ -5,6 +5,6 @@
   "settings": {
     "minPointsToConvert": 10,
     "messagesThreshold": 5,
-    "pointsPerThreshold": 5
+    "pointsPerThreshold": 10
   }
 }
