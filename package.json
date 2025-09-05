@@ -1,15 +1,14 @@
 {
-  "name": "bestoption-bot",
+  "name": "discord-channels-manager",
   "version": "1.0.0",
-  "description": "بوت ديسكورد لإدارة النقاط والتحويلات والتوب",
+  "description": "Bot Discord لإدارة قفل/فتح/حذف القنوات مع التخزين في ملف JSON",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
-  "author": "Raed",
-  "license": "MIT",
   "dependencies": {
-    "discord.js": "^14.14.0",
-    "fs": "^0.0.1-security"
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
   }
 }
