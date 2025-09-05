@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRow } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRow } = require('discord.js');
 const fs = require('fs');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
@@ -8,23 +8,23 @@ let data = JSON.parse(fs.readFileSync(dataPath));
 const BOT_NAME = "R∆3D";
 const BOT_DESC = "بوت النقاط";
 
+// ===== البيئة =====
+const TOKEN = process.env.TOKEN;
+const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
+const MIN_POINTS = parseInt(process.env.MIN_POINTS) || 10;
+const OWNER_ID = process.env.OWNER_ID;
+
+// إعداد النقاط التلقائية
+const MESSAGE_THRESHOLD = data.settings.messagesThreshold || 5;
+const POINTS_PER_THRESHOLD = data.settings.pointsPerThreshold || 5;
+
 function saveData() {
     fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
 }
 
-// ===== متغيرات البيئة من Railway =====
-const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
-const MIN_POINTS = parseInt(process.env.MIN_POINTS) || 10;
-
-// إعداد الرسائل التلقائية
-const MESSAGE_THRESHOLD = 5;
-const POINTS_PER_THRESHOLD = 5;
-
 // عند تشغيل البوت
 client.once('ready', async () => {
     console.log(`${BOT_NAME} جاهز!`);
-
-    // تسجيل أمر /menu
     const guild = client.guilds.cache.first();
     await guild.commands.create(new SlashCommandBuilder().setName('menu').setDescription('فتح القائمة الرئيسية'));
 });
@@ -42,7 +42,9 @@ client.on('messageCreate', async message => {
         saveData();
 
         const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
-        if(logChannel) logChannel.send(`<@${userId}> حصل على ${POINTS_PER_THRESHOLD} نقاط! مجموع نقاطه: ${data.users[userId].points}`);
+        if(logChannel) logChannel.send(
+            `عضو: <@${userId}>\nيوزره: ${message.author.username}\nنقاطه الحالية: ${data.users[userId].points}\nالنقاط المكتسبة: ${POINTS_PER_THRESHOLD}`
+        );
     }
 });
 
@@ -52,38 +54,43 @@ client.on('interactionCreate', async interaction => {
 
     const userId = interaction.user.id;
     if (!data.users[userId]) data.users[userId] = { points: 0, messageCount: 0 };
-
-    const isOwner = interaction.user.id === interaction.guild.ownerId;
+    const isOwner = userId === OWNER_ID;
     const isAdmin = interaction.member.permissions.has("Administrator");
 
     // ===== /menu =====
     if (interaction.isChatInputCommand() && interaction.commandName === 'menu') {
+        if (!isOwner && !isAdmin) { // للأعضاء العاديين فقط تظهر خياراتهم
+            const menu = new StringSelectMenuBuilder()
+                .setCustomId('menu_select')
+                .setPlaceholder('اختر خيار من القائمة')
+                .addOptions([
+                    { label: 'عرض نقاطي', value: 'my_points' },
+                    { label: 'التوب', value: 'top_users' },
+                    { label: 'تحويل النقاط للترقية', value: 'convert_upgrade' },
+                    { label: 'تحويل النقاط للكريدت', value: 'convert_credit' }
+                ]);
+            const row = new ActionRowBuilder().addComponents(menu);
+            await interaction.reply({ content: `**${BOT_NAME}**\n${BOT_DESC}`, components: [row], ephemeral: true });
+            return;
+        }
+
+        // للمالك فقط
+        if (!isOwner) return interaction.reply({ content: 'هذا الأمر محجوز لمالك السيرفر فقط.', ephemeral: true });
+
         const menu = new StringSelectMenuBuilder()
             .setCustomId('menu_select')
-            .setPlaceholder('اختر خيار من القائمة');
-
-        if (isOwner) {
-            menu.addOptions([
+            .setPlaceholder('اختر خيار من القائمة')
+            .addOptions([
                 { label: 'إضافة نقاط', value: 'add_points' },
-                { label: 'إضافة رسائل', value: 'add_msgs' },
+                { label: 'إضافة عدد رسائل', value: 'add_msgs' },
                 { label: 'تغيير الحد الأدنى للتحويل', value: 'change_min' },
                 { label: 'عرض الأعضاء والنقاط', value: 'view_users' },
                 { label: 'تصفير النقاط', value: 'reset_points' },
                 { label: 'طلبات الترقيه', value: 'upgrade_requests' },
-                { label: 'طلبات كريدت', value: 'credit_requests' }
+                { label: 'طلبات الكريدت', value: 'credit_requests' }
             ]);
-        } else {
-            menu.addOptions([
-                { label: 'عرض نقاطي', value: 'my_points' },
-                { label: 'التوب', value: 'top_users' },
-                { label: 'تحويل النقاط للترقية', value: 'convert_upgrade' },
-                { label: 'تحويل النقاط للكريدت', value: 'convert_credit' }
-            ]);
-        }
-
         const row = new ActionRowBuilder().addComponents(menu);
         await interaction.reply({ content: `**${BOT_NAME}**\n${BOT_DESC}`, components: [row], ephemeral: true });
-        return;
     }
 
     // ===== القوائم المنسدلة =====
@@ -91,6 +98,7 @@ client.on('interactionCreate', async interaction => {
         const option = interaction.values[0];
         const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
 
+        // ===== خيارات الأعضاء/الإداريين =====
         if (!isOwner) {
             switch(option) {
                 case 'my_points':
@@ -99,124 +107,125 @@ client.on('interactionCreate', async interaction => {
                 case 'top_users':
                     const top = Object.entries(data.users)
                         .sort((a,b) => b[1].points - a[1].points)
-                        .slice(0, 10)
-                        .map(([id, u], idx) => `${idx+1}. <@${id}> - ${u.points} نقاط`)
+                        .slice(0,10)
+                        .map(([id,u],idx)=>`${idx+1}. <@${id}> - ${u.points} نقاط`)
                         .join('\n') || "لا يوجد أعضاء";
                     await interaction.reply({ content: `**التوب:**\n${top}`, ephemeral: true });
                     break;
                 case 'convert_upgrade':
-                    if(data.users[userId].points < MIN_POINTS){
-                        await interaction.reply({ content: `الحد الأدنى للتحويل: ${MIN_POINTS} نقاط`, ephemeral: true });
+                    if (!isAdmin) {
+                        await interaction.reply({ content: 'يجب أن تكون إداري لتحويل النقاط للترقية', ephemeral:true });
+                        return;
+                    }
+                    if (data.users[userId].points < MIN_POINTS) {
+                        await interaction.reply({ content: `الحد الأدنى للتحويل: ${MIN_POINTS} نقاط`, ephemeral:true });
                     } else {
                         data.upgradeRequests[userId] = data.users[userId].points;
-                        const pointsConverted = data.users[userId].points;
+                        const pts = data.users[userId].points;
                         data.users[userId].points = 0;
                         saveData();
-                        await interaction.reply({ content: `تم تحويل نقاطك للترقية! افتح تذكرة للاستلام`, ephemeral: true });
-                        if(logChannel) logChannel.send(`<@${userId}> حول نقاطه للترقية: ${pointsConverted} نقاط`);
+                        await interaction.reply({ content: 'تم تحويل نقاطك للترقية! افتح تذكرة للاستلام', ephemeral:true });
+                        if(logChannel) logChannel.send(`<@${userId}> حول نقاطه للترقية: ${pts}`);
                     }
                     break;
                 case 'convert_credit':
-                    if(data.users[userId].points < MIN_POINTS){
-                        await interaction.reply({ content: `الحد الأدنى للتحويل: ${MIN_POINTS} نقاط`, ephemeral: true });
+                    if (data.users[userId].points < MIN_POINTS) {
+                        await interaction.reply({ content: `الحد الأدنى للتحويل: ${MIN_POINTS} نقاط`, ephemeral:true });
                     } else {
                         data.creditRequests[userId] = data.users[userId].points;
-                        const pointsConverted = data.users[userId].points;
+                        const pts = data.users[userId].points;
                         data.users[userId].points = 0;
                         saveData();
-                        await interaction.reply({ content: `تم تحويل نقاطك للكريدت! افتح تذكرة للاستلام`, ephemeral: true });
-                        if(logChannel) logChannel.send(`<@${userId}> حول نقاطه للكريدت: ${pointsConverted} نقاط`);
+                        await interaction.reply({ content: 'تم تحويل نقاطك للكريدت! افتح تذكرة للاستلام', ephemeral:true });
+                        if(logChannel) logChannel.send(`<@${userId}> حول نقاطه للكريدت: ${pts}`);
                     }
                     break;
-                default:
-                    await interaction.reply({ content: `الخيار غير معروف`, ephemeral: true });
-                    break;
             }
+            return;
         }
 
-        if (isOwner) {
-            switch(option) {
-                case 'add_points':
-                    const modal = new ModalBuilder()
-                        .setCustomId('modal_add_points')
-                        .setTitle('إضافة نقاط');
+        // ===== خيارات المالك =====
+        if (!isOwner) return; // غير المالك لا يستطيع الوصول هنا
 
-                    const inputUser = new TextInputBuilder()
-                        .setCustomId('target_user')
-                        .setLabel('ايدي العضو أو منشن')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true);
+        switch(option) {
+            case 'add_points':
+                const modal = new ModalBuilder()
+                    .setCustomId('modal_add_points')
+                    .setTitle('إضافة نقاط');
 
-                    const inputPoints = new TextInputBuilder()
-                        .setCustomId('points_amount')
-                        .setLabel('عدد النقاط')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true);
+                const inputUser = new TextInputBuilder()
+                    .setCustomId('target_user')
+                    .setLabel('ايدي العضو أو منشن')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
 
-                    modal.addComponents(new ActionRow().addComponents(inputUser));
-                    modal.addComponents(new ActionRow().addComponents(inputPoints));
+                const inputPoints = new TextInputBuilder()
+                    .setCustomId('points_amount')
+                    .setLabel('عدد النقاط')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
 
-                    await interaction.showModal(modal);
-                    break;
-                case 'add_msgs':
-                    await interaction.reply({ content: `خاصية إضافة الرسائل لتحديد نقاط لكل X رسائل جاهزة مسبقاً`, ephemeral: true });
-                    break;
-                case 'change_min':
-                    await interaction.reply({ content: `لتغيير الحد الأدنى للتحويل، عدل قيمة MIN_POINTS في Environment Variables على Railway` , ephemeral:true });
-                    break;
-                case 'view_users':
-                    const list = Object.entries(data.users)
-                        .sort((a,b) => b[1].points - a[1].points)
-                        .map(([id,u],idx)=>`${idx+1}. <@${id}> - ${u.points} نقاط`)
-                        .join('\n') || "لا يوجد أعضاء";
-                    await interaction.reply({ content: `**الأعضاء والنقاط:**\n${list}`, ephemeral: true });
-                    break;
-                case 'reset_points':
-                    Object.values(data.users).forEach(u => u.points = 0);
-                    saveData();
-                    if(logChannel) logChannel.send(`تم تصفير نقاط جميع الأعضاء بواسطة ${interaction.user.tag}`);
-                    await interaction.reply({ content: `تم تصفير نقاط جميع الأعضاء!`, ephemeral: true });
-                    break;
-                case 'upgrade_requests':
-                    const upgrades = Object.entries(data.upgradeRequests).map(([id,pts])=>`${pts} نقاط - <@${id}>`).join('\n') || "لا يوجد طلبات";
-                    await interaction.reply({ content: `**طلبات الترقيه:**\n${upgrades}`, ephemeral: true });
-                    break;
-                case 'credit_requests':
-                    const credits = Object.entries(data.creditRequests).map(([id,pts])=>`${pts} نقاط - <@${id}>`).join('\n') || "لا يوجد طلبات";
-                    await interaction.reply({ content: `**طلبات الكريدت:**\n${credits}`, ephemeral: true });
-                    break;
-                default:
-                    await interaction.reply({ content: `الخيار غير معروف`, ephemeral: true });
-                    break;
-            }
+                modal.addComponents(new ActionRow().addComponents(inputUser));
+                modal.addComponents(new ActionRow().addComponents(inputPoints));
+                await interaction.showModal(modal);
+                break;
+
+            case 'add_msgs':
+                await interaction.reply({ content: `خاصية إضافة الرسائل جاهزة مسبقاً لكل ${MESSAGE_THRESHOLD} رسائل يعطي ${POINTS_PER_THRESHOLD} نقاط`, ephemeral:true });
+                break;
+
+            case 'change_min':
+                await interaction.reply({ content: `لتغيير الحد الأدنى للتحويل، عدل قيمة MIN_POINTS في Environment Variables على Railway` , ephemeral:true });
+                break;
+
+            case 'view_users':
+                const list = Object.entries(data.users)
+                    .sort((a,b) => b[1].points - a[1].points)
+                    .map(([id,u],idx)=>`${idx+1}. <@${id}> - ${u.points} نقاط`)
+                    .join('\n') || "لا يوجد أعضاء";
+                await interaction.reply({ content: `**الأعضاء والنقاط:**\n${list}`, ephemeral:true });
+                break;
+
+            case 'reset_points':
+                Object.values(data.users).forEach(u => u.points=0);
+                saveData();
+                if(logChannel) logChannel.send(`تم تصفير نقاط جميع الأعضاء بواسطة ${interaction.user.tag}`);
+                await interaction.reply({ content:'تم تصفير نقاط جميع الأعضاء!', ephemeral:true });
+                break;
+
+            case 'upgrade_requests':
+                const upgrades = Object.entries(data.upgradeRequests).map(([id,pts])=>`${pts} نقاط - <@${id}>`).join('\n') || "لا يوجد طلبات";
+                await interaction.reply({ content:`**طلبات الترقيه:**\n${upgrades}`, ephemeral:true });
+                break;
+
+            case 'credit_requests':
+                const credits = Object.entries(data.creditRequests).map(([id,pts])=>`${pts} نقاط - <@${id}>`).join('\n') || "لا يوجد طلبات";
+                await interaction.reply({ content:`**طلبات الكريدت:**\n${credits}`, ephemeral:true });
+                break;
         }
     }
 
     // ===== مودال إضافة النقاط للمالك =====
-    if(interaction.isModalSubmit() && interaction.customId === 'modal_add_points'){
+    if(interaction.isModalSubmit() && interaction.customId==='modal_add_points'){
+        if(!isOwner) return interaction.reply({content:'هذا الخيار محجوز لمالك السيرفر فقط.', ephemeral:true});
+
         const target = interaction.fields.getTextInputValue('target_user');
         const points = parseInt(interaction.fields.getTextInputValue('points_amount'));
-        if(isNaN(points)){
-            await interaction.reply({ content: `الرجاء إدخال رقم صحيح للنقاط!`, ephemeral: true });
-            return;
-        }
+        if(isNaN(points)) return interaction.reply({content:'الرجاء إدخال رقم صحيح للنقاط!', ephemeral:true});
 
         let targetId;
-        if(target.match(/^<@!?(\d+)>$/)){
-            targetId = target.replace(/\D/g,'');
-        } else {
-            targetId = target;
-        }
+        if(target.match(/^<@!?(\d+)>$/)) targetId = target.replace(/\D/g,'');
+        else targetId = target;
 
-        if(!data.users[targetId]) data.users[targetId] = { points:0, messageCount:0 };
+        if(!data.users[targetId]) data.users[targetId]={points:0,messageCount:0};
         data.users[targetId].points += points;
         saveData();
 
-        await interaction.reply({ content: `تم إعطاء <@${targetId}> ${points} نقاط!`, ephemeral: true });
+        await interaction.reply({content:`تم إعطاء <@${targetId}> ${points} نقاط!`, ephemeral:true});
         const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
         if(logChannel) logChannel.send(`<@${targetId}> حصل على ${points} نقاط بواسطة ${interaction.user.tag}. مجموع نقاطه: ${data.users[targetId].points}`);
     }
 
 });
 
-client.login(process.env.TOKEN);
+client.login(TOKEN);
