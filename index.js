@@ -1,4 +1,3 @@
-require('dotenv').config();
 const { Client, GatewayIntentBits, SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRow } = require('discord.js');
 const fs = require('fs');
 
@@ -6,17 +5,20 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 const dataPath = './data.json';
 let data = JSON.parse(fs.readFileSync(dataPath));
 
-const BOT_NAME = "BestOption Bot";
-const BOT_DESC = "بوت إدارة النقاط والتحويلات";
+const BOT_NAME = "R∆3D";
+const BOT_DESC = "بوت النقاط";
 
 function saveData() {
     fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
 }
 
+// ===== متغيرات البيئة من Railway =====
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 const MIN_POINTS = parseInt(process.env.MIN_POINTS) || 10;
-const MESSAGE_THRESHOLD = 5; // بعد كم رسالة يعطي نقاط
-const POINTS_PER_THRESHOLD = 5; // عدد النقاط لكل threshold
+
+// إعداد الرسائل التلقائية
+const MESSAGE_THRESHOLD = 5;
+const POINTS_PER_THRESHOLD = 5;
 
 // عند تشغيل البوت
 client.once('ready', async () => {
@@ -54,7 +56,7 @@ client.on('interactionCreate', async interaction => {
     const isOwner = interaction.user.id === interaction.guild.ownerId;
     const isAdmin = interaction.member.permissions.has("Administrator");
 
-    // ==== /menu للأمر ====
+    // ===== /menu =====
     if (interaction.isChatInputCommand() && interaction.commandName === 'menu') {
         const menu = new StringSelectMenuBuilder()
             .setCustomId('menu_select')
@@ -84,12 +86,11 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
-    // ==== القوائم المنسدلة ====
+    // ===== القوائم المنسدلة =====
     if (interaction.isStringSelectMenu() && interaction.customId === 'menu_select') {
         const option = interaction.values[0];
         const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
 
-        // ===== الأعضاء والإداريين =====
         if (!isOwner) {
             switch(option) {
                 case 'my_points':
@@ -133,11 +134,9 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // ===== للمالك =====
         if (isOwner) {
             switch(option) {
                 case 'add_points':
-                    // فتح مودال لإدخال العضو وعدد النقاط
                     const modal = new ModalBuilder()
                         .setCustomId('modal_add_points')
                         .setTitle('إضافة نقاط');
@@ -159,15 +158,12 @@ client.on('interactionCreate', async interaction => {
 
                     await interaction.showModal(modal);
                     break;
-
                 case 'add_msgs':
                     await interaction.reply({ content: `خاصية إضافة الرسائل لتحديد نقاط لكل X رسائل جاهزة مسبقاً`, ephemeral: true });
                     break;
-
                 case 'change_min':
-                    await interaction.reply({ content: `لتغيير الحد الأدنى للتحويل، عدل قيمة MIN_POINTS في .env` , ephemeral:true });
+                    await interaction.reply({ content: `لتغيير الحد الأدنى للتحويل، عدل قيمة MIN_POINTS في Environment Variables على Railway` , ephemeral:true });
                     break;
-
                 case 'view_users':
                     const list = Object.entries(data.users)
                         .sort((a,b) => b[1].points - a[1].points)
@@ -175,24 +171,20 @@ client.on('interactionCreate', async interaction => {
                         .join('\n') || "لا يوجد أعضاء";
                     await interaction.reply({ content: `**الأعضاء والنقاط:**\n${list}`, ephemeral: true });
                     break;
-
                 case 'reset_points':
                     Object.values(data.users).forEach(u => u.points = 0);
                     saveData();
                     if(logChannel) logChannel.send(`تم تصفير نقاط جميع الأعضاء بواسطة ${interaction.user.tag}`);
                     await interaction.reply({ content: `تم تصفير نقاط جميع الأعضاء!`, ephemeral: true });
                     break;
-
                 case 'upgrade_requests':
                     const upgrades = Object.entries(data.upgradeRequests).map(([id,pts])=>`${pts} نقاط - <@${id}>`).join('\n') || "لا يوجد طلبات";
                     await interaction.reply({ content: `**طلبات الترقيه:**\n${upgrades}`, ephemeral: true });
                     break;
-
                 case 'credit_requests':
                     const credits = Object.entries(data.creditRequests).map(([id,pts])=>`${pts} نقاط - <@${id}>`).join('\n') || "لا يوجد طلبات";
                     await interaction.reply({ content: `**طلبات الكريدت:**\n${credits}`, ephemeral: true });
                     break;
-
                 default:
                     await interaction.reply({ content: `الخيار غير معروف`, ephemeral: true });
                     break;
