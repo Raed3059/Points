@@ -40,12 +40,22 @@ const commands = [
     .setName("delete-channels")
     .setDescription("يحذف الرومات المحددة")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
+    .setName("show-channels")
+    .setDescription("يعرض الرومات المحددة حالياً")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
+    .setName("clear-channels")
+    .setDescription("يمسح الرومات المحددة من القائمة (بدون حذفها)")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ].map((command) => command.toJSON());
 
 // تحميل القنوات من الملف
 function loadChannels() {
-  if (fs.existsSync("data.json")) {
-    const data = fs.readFileSync("data.json", "utf8");
+  if (fs.existsSync("channels.json")) {
+    const data = fs.readFileSync("channels.json", "utf8");
     return JSON.parse(data);
   }
   return [];
@@ -53,10 +63,10 @@ function loadChannels() {
 
 // حفظ القنوات في الملف
 function saveChannels(channels) {
-  fs.writeFileSync("data.json", JSON.stringify(channels, null, 2));
+  fs.writeFileSync("channels.json", JSON.stringify(channels, null, 2));
 }
 
-// نخزن القنوات المحددة مؤقتاً
+// نخزن القنوات المحددة
 let selectedChannels = loadChannels();
 
 // تسجيل الأوامر
@@ -82,6 +92,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .setLabel(ch.name)
             .setValue(ch.id)
         );
+
+      if (channels.length === 0) {
+        return interaction.reply({ content: "❌ مافي قنوات نصية في السيرفر", ephemeral: true });
+      }
 
       const menu = new StringSelectMenuBuilder()
         .setCustomId("select_channels")
@@ -143,6 +157,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
       selectedChannels = [];
       saveChannels(selectedChannels);
       await interaction.reply("🗑️ تم حذف الرومات المحددة");
+    }
+
+    // عرض الرومات
+    if (interaction.commandName === "show-channels") {
+      if (selectedChannels.length === 0) {
+        return interaction.reply({ content: "❌ مافي رومات محددة", ephemeral: true });
+      }
+      await interaction.reply({
+        content: `📋 الرومات المحددة حالياً:\n${selectedChannels
+          .map((id) => `<#${id}>`)
+          .join("\n")}`,
+        ephemeral: true,
+      });
+    }
+
+    // مسح القائمة (بدون حذف الرومات)
+    if (interaction.commandName === "clear-channels") {
+      selectedChannels = [];
+      saveChannels(selectedChannels);
+      await interaction.reply("🧹 تم مسح جميع القنوات من القائمة (بدون حذفها)");
     }
   }
 
