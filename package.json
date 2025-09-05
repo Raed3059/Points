@@ -1,0 +1,16 @@
+{
+  "name": "bestoption-bot",
+  "version": "1.0.0",
+  "description": "بوت ديسكورد لإدارة النقاط والتحويلات والتوب",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Raed",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.0",
+    "dotenv": "^16.3.1",
+    "fs": "^0.0.1-security"
+  }
+}
