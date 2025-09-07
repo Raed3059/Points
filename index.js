@@ -1,198 +1,142 @@
-import {
+const {
   Client,
   GatewayIntentBits,
-  SlashCommandBuilder,
-  Routes,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ActionRowBuilder,
-  PermissionFlagsBits,
-  REST,
   Events,
-} from "discord.js";
-import "dotenv/config";
-import fs from "fs";
+  SlashCommandBuilder,
+  REST,
+  Routes
+} = require('discord.js');
 
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
-});
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
 
-const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// أوامر السلاش
+// ===== تسجيل الأوامر =====
 const commands = [
   new SlashCommandBuilder()
-    .setName("select-channels")
-    .setDescription("حدد الرومات من قائمة منسدلة")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setName('setmenu')
+    .setDescription('إظهار قائمة القوانين والاشتراطات')
+].map(cmd => cmd.toJSON());
 
-  new SlashCommandBuilder()
-    .setName("lock-channels")
-    .setDescription("يقفل الرومات المحددة")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+const rest = new REST({ version: '10' }).setToken(TOKEN);
 
-  new SlashCommandBuilder()
-    .setName("unlock-channels")
-    .setDescription("يفتح الرومات المحددة")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-  new SlashCommandBuilder()
-    .setName("delete-channels")
-    .setDescription("يحذف الرومات المحددة")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-  new SlashCommandBuilder()
-    .setName("show-channels")
-    .setDescription("يعرض الرومات المحددة حالياً")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-  new SlashCommandBuilder()
-    .setName("clear-channels")
-    .setDescription("يمسح الرومات المحددة من القائمة (بدون حذفها)")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-].map((command) => command.toJSON());
-
-// تحميل القنوات من الملف
-function loadChannels() {
-  if (fs.existsSync("channels.json")) {
-    const data = fs.readFileSync("channels.json", "utf8");
-    return JSON.parse(data);
-  }
-  return [];
-}
-
-// حفظ القنوات في الملف
-function saveChannels(channels) {
-  fs.writeFileSync("channels.json", JSON.stringify(channels, null, 2));
-}
-
-// نخزن القنوات المحددة
-let selectedChannels = loadChannels();
-
-// تسجيل الأوامر
 (async () => {
   try {
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
-      body: commands,
-    });
-    console.log("✅ تم رفع الأوامر");
-  } catch (err) {
-    console.error(err);
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+    console.log('✅ تم رفع الأوامر');
+  } catch (error) {
+    console.error(error);
   }
 })();
 
+// ===== الاحداث =====
 client.on(Events.InteractionCreate, async (interaction) => {
-  // قائمة اختيار القنوات
   if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === "select-channels") {
-      const channels = interaction.guild.channels.cache
-        .filter((ch) => ch.type === 0) // فقط النصية
-        .map((ch) =>
-          new StringSelectMenuOptionBuilder()
-            .setLabel(ch.name)
-            .setValue(ch.id)
-        );
+    if (interaction.commandName === 'setmenu') {
+      const embed = new EmbedBuilder()
+        .setTitle('حي الله من جانا! 👋🏻')
+        .setDescription('اكتشف المزيد عن خدماتنا ورؤيتنا من خلال\nالأزرار أدناه،\nحيث يمكنك التعرف على هويتنا, قيمنا، والخدمات الي نقدمها لنساعدك في تحقيق أهدافك الرقمية!')
+        .setImage('https://i.top4top.io/p_3537qzeqi0.png')
+        .setColor(0x2f3136);
 
-      if (channels.length === 0) {
-        return interaction.reply({ content: "❌ مافي قنوات نصية في السيرفر", ephemeral: true });
-      }
+      const button = new ButtonBuilder()
+        .setCustomId('rules')
+        .setLabel('القوانين والاشتراطات')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('📜');
 
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId("select_channels")
-        .setPlaceholder("اختر الرومات...")
-        .setMinValues(1)
-        .setMaxValues(channels.length)
-        .addOptions(channels);
+      const row = new ActionRowBuilder().addComponents(button);
 
-      const row = new ActionRowBuilder().addComponents(menu);
-
-      await interaction.reply({
-        content: "اختر الرومات الي تبي:",
-        components: [row],
-        ephemeral: true,
-      });
-    }
-
-    // قفل الرومات
-    if (interaction.commandName === "lock-channels") {
-      if (selectedChannels.length === 0)
-        return interaction.reply({ content: "❌ ما حددت أي روم", ephemeral: true });
-
-      for (const id of selectedChannels) {
-        const channel = interaction.guild.channels.cache.get(id);
-        if (channel) {
-          await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
-            SendMessages: false,
-          });
-        }
-      }
-      await interaction.reply("✅ تم قفل الرومات المحددة");
-    }
-
-    // فتح الرومات
-    if (interaction.commandName === "unlock-channels") {
-      if (selectedChannels.length === 0)
-        return interaction.reply({ content: "❌ ما حددت أي روم", ephemeral: true });
-
-      for (const id of selectedChannels) {
-        const channel = interaction.guild.channels.cache.get(id);
-        if (channel) {
-          await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
-            SendMessages: true,
-          });
-        }
-      }
-      await interaction.reply("✅ تم فتح الرومات المحددة");
-    }
-
-    // حذف الرومات
-    if (interaction.commandName === "delete-channels") {
-      if (selectedChannels.length === 0)
-        return interaction.reply({ content: "❌ ما حددت أي روم", ephemeral: true });
-
-      for (const id of selectedChannels) {
-        const channel = interaction.guild.channels.cache.get(id);
-        if (channel) await channel.delete();
-      }
-      selectedChannels = [];
-      saveChannels(selectedChannels);
-      await interaction.reply("🗑️ تم حذف الرومات المحددة");
-    }
-
-    // عرض الرومات
-    if (interaction.commandName === "show-channels") {
-      if (selectedChannels.length === 0) {
-        return interaction.reply({ content: "❌ مافي رومات محددة", ephemeral: true });
-      }
-      await interaction.reply({
-        content: `📋 الرومات المحددة حالياً:\n${selectedChannels
-          .map((id) => `<#${id}>`)
-          .join("\n")}`,
-        ephemeral: true,
-      });
-    }
-
-    // مسح القائمة (بدون حذف الرومات)
-    if (interaction.commandName === "clear-channels") {
-      selectedChannels = [];
-      saveChannels(selectedChannels);
-      await interaction.reply("🧹 تم مسح جميع القنوات من القائمة (بدون حذفها)");
+      await interaction.reply({ embeds: [embed], components: [row] });
     }
   }
 
-  // تخزين اختيار القنوات
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId === "select_channels") {
-      selectedChannels = interaction.values;
-      saveChannels(selectedChannels);
+  // ===== زر القوانين =====
+  if (interaction.isButton()) {
+    if (interaction.customId === 'rules') {
+      const embed = new EmbedBuilder()
+        .setTitle('القوانين والاشتراطات')
+        .setImage('https://j.top4top.io/p_353792lva1.png')
+        .setColor(0x5865F2);
+
+      const nextBtn = new ButtonBuilder()
+        .setCustomId('next')
+        .setLabel('التالي')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('➡️');
+
+      const prevBtn = new ButtonBuilder()
+        .setCustomId('prev')
+        .setLabel('السابق')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('⬅️')
+        .setDisabled(true);
+
+      const row = new ActionRowBuilder().addComponents(prevBtn, nextBtn);
+
       await interaction.reply({
-        content: `✅ تم اختيار: ${interaction.values
-          .map((id) => `<#${id}>`)
-          .join(", ")}`,
-        ephemeral: true,
+        embeds: [embed],
+        components: [row],
+        ephemeral: true
       });
+    }
+
+    // ===== زر التالي =====
+    if (interaction.customId === 'next') {
+      const embed = new EmbedBuilder()
+        .setTitle('القوانين والاشتراطات')
+        .setImage('https://k.top4top.io/p_3537d1xrw2.png')
+        .setColor(0x5865F2);
+
+      const nextBtn = new ButtonBuilder()
+        .setCustomId('next')
+        .setLabel('التالي')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('➡️')
+        .setDisabled(true);
+
+      const prevBtn = new ButtonBuilder()
+        .setCustomId('prev')
+        .setLabel('السابق')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('⬅️');
+
+      const row = new ActionRowBuilder().addComponents(prevBtn, nextBtn);
+
+      await interaction.update({ embeds: [embed], components: [row] });
+    }
+
+    // ===== زر السابق =====
+    if (interaction.customId === 'prev') {
+      const embed = new EmbedBuilder()
+        .setTitle('القوانين والاشتراطات')
+        .setImage('https://j.top4top.io/p_353792lva1.png')
+        .setColor(0x5865F2);
+
+      const nextBtn = new ButtonBuilder()
+        .setCustomId('next')
+        .setLabel('التالي')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('➡️');
+
+      const prevBtn = new ButtonBuilder()
+        .setCustomId('prev')
+        .setLabel('السابق')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('⬅️')
+        .setDisabled(true);
+
+      const row = new ActionRowBuilder().addComponents(prevBtn, nextBtn);
+
+      await interaction.update({ embeds: [embed], components: [row] });
     }
   }
 });
 
-client.login(process.env.TOKEN);
+client.login(TOKEN);

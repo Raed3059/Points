@@ -1,14 +1,12 @@
 {
-  "name": "discord-channels-manager",
+  "name": "discord-rules-bot",
   "version": "1.0.0",
-  "description": "Bot Discord لإدارة قفل/فتح/حذف القنوات مع التخزين في ملف JSON",
+  "description": "Discord bot for rules menu",
   "main": "index.js",
-  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.16.3",
-    "dotenv": "^16.4.5"
+    "discord.js": "^14.15.3"
   }
 }
